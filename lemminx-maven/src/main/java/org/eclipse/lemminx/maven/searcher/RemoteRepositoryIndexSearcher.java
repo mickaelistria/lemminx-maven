@@ -56,11 +56,14 @@ import org.codehaus.plexus.PlexusContainer;
 import org.eclipse.aether.repository.RemoteRepository;
 
 public class RemoteRepositoryIndexSearcher {
+	private static final String MAVEN_INDEX_DIRECTORY = "._maven_index_";
 	private static final String PACKAGING_TYPE_JAR = "jar";
 	private static final String PACKAGING_TYPE_MAVEN_PLUGIN = "maven-plugin";
 
 	public static final RemoteRepository CENTRAL_REPO = new RemoteRepository.Builder("central", "default", "https://repo.maven.apache.org/maven2").build();
 	private final Set<RemoteRepository> knownRepositories;
+	
+	public static boolean disableCentralIndex = Boolean.parseBoolean(System.getProperty(RemoteRepositoryIndexSearcher.class.getName() + ".disableCentralIndex")) ;
 	
 	private Indexer indexer;
 
@@ -101,9 +104,14 @@ public class RemoteRepositoryIndexSearcher {
 			e.printStackTrace();
 		}
 		this.knownRepositories = new HashSet<>();
-		knownRepositories.add(CENTRAL_REPO);
+		if (!disableCentralIndex) {
+			knownRepositories.add(CENTRAL_REPO);
+		}
+		
+		String customIndexLocation = System.getenv("MAVEN_USER_HOME");
 		File localRepository = new File(RepositorySystem.defaultUserLocalRepository.getAbsolutePath());
-		this.indexPath = new File(localRepository.getParent(), "_maven_index_");
+		this.indexPath = customIndexLocation != null ? new File(new File(customIndexLocation), MAVEN_INDEX_DIRECTORY) : new File(localRepository.getParent(), MAVEN_INDEX_DIRECTORY);
+		
 		indexPath.mkdirs();
 		knownRepositories.stream().map(RemoteRepository::getUrl).map(URI::create).forEach(this::getIndexingContext);
 		// TODO knownRepositories.addAll(readRepositoriesFromSettings());
@@ -159,7 +167,7 @@ public class RemoteRepositoryIndexSearcher {
 		return internalGetArtifactVersions(artifactToSearch, PACKAGING_TYPE_MAVEN_PLUGIN, requestSpecificContexts);
 	}
 	
-	private Collection<ArtifactInfo> internalGetArtifactIds(Dependency artifactToSearch, String packaging, IndexingContext... requestSpecificContexts) {
+	private Collection<ArtifactInfo> internalGetArtifacts(Dependency artifactToSearch, String packaging, IndexingContext... requestSpecificContexts) {
 		BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
 		if (artifactToSearch.getGroupId() != null) {
 			queryBuilder.add(indexer.constructQuery(MAVEN.GROUP_ID, artifactToSearch.getGroupId(), SearchType.EXACT), Occur.MUST);
@@ -180,12 +188,12 @@ public class RemoteRepositoryIndexSearcher {
 	 * @param artifactToSearch a CompletableFuture containing a {@code Map<String artifactId, String artifactDescription>} 
 	 * @return
 	 */
-	public Collection<ArtifactInfo> getArtifactIds(Dependency artifactToSearch, IndexingContext... requestSpecificContexts) {
-		return internalGetArtifactIds(artifactToSearch, PACKAGING_TYPE_JAR, requestSpecificContexts);
+	public Collection<ArtifactInfo> getArtifacts(Dependency artifactToSearch, IndexingContext... requestSpecificContexts) {
+		return internalGetArtifacts(artifactToSearch, PACKAGING_TYPE_JAR, requestSpecificContexts);
 	}
 	
-	public Collection<ArtifactInfo> getPluginArtifactIds(Dependency artifactToSearch, IndexingContext... requestSpecificContexts) {
-		return internalGetArtifactIds(artifactToSearch, PACKAGING_TYPE_MAVEN_PLUGIN, requestSpecificContexts);
+	public Collection<ArtifactInfo> getPluginArtifacts(Dependency artifactToSearch, IndexingContext... requestSpecificContexts) {
+		return internalGetArtifacts(artifactToSearch, PACKAGING_TYPE_MAVEN_PLUGIN, requestSpecificContexts);
 	}
 
 	private Set<String> internalGetGroupIds(Dependency artifactToSearch, String packaging, IndexingContext... requestSpecificContexts) {
@@ -213,6 +221,10 @@ public class RemoteRepositoryIndexSearcher {
 	private CompletableFuture<Void> updateIndex(IndexingContext context) {
 		if (context == null) {
 			return CompletableFuture.runAsync(() -> { throw new IllegalArgumentException("context mustn't be null"); });
+		}
+		if ((context.getId().equals("https://repo.maven.apache.org/maven2") || context.getId().equals(CENTRAL_REPO.getId()))
+				&& disableCentralIndex) {
+			return CompletableFuture.runAsync(() -> System.out.println("Central repository index disabled"));
 		}
 		System.out.println("Updating Index for " + context.getRepositoryUrl() + "...");
 		Date contextCurrentTimestamp = context.getTimestamp();
