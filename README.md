@@ -1,3 +1,7 @@
+<!-- GitHub doesn't allow non http link (I opened a ticket, so we go through a URL shortener that accepts non
+http URLs so we can show and HTTP link -->
+<a href="http://shorturl.at/fsV34"><img src="fakeBadge.bmp"/></a>
+
 # LemMinX-Maven
 
 This project is an Eclipse LemMinX (XML Language Server) Extension for Maven. It provides :
